@@ -1,13 +1,48 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Invoice Finance for Claude Code: what needs attention, rendered by npm run view",
+    "title": "This week in the book",
+    "subtitle": "Invoice Finance for Claude Code: what each client can draw, money held by clients, and what is waiting, rendered by npm run view",
     "sections": [
       {
-        "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "title": "What each client can draw",
+        "note": "Drawing base = (ledger less ineligible invoices less concentration excess) x advance rate, capped at the facility limit. A negative figure is an over-advance.",
+        "sql": "select code as client, status, ledger_cents, ineligible_cents, concentration_excess_cents, drawing_base_cents, funds_in_use_cents, available_cents as can_draw_cents from v_availability where status in ('active', 'watch') order by available_cents"
+      },
+      {
+        "title": "Debtor payments held by clients",
+        "sql": "select client_code as client, debtor_name as debtor, invoice_no, received_on as paid_to_client_on, amount_cents, days_held from v_misdirected order by days_held desc"
+      },
+      {
+        "title": "Waiting on us",
+        "sql": "select 'Schedule to fund or reject' as what, k.code as client, s.ref as item, s.received_on as since from schedules s join clients k on k.id = s.client_id where s.status = 'received' union all select 'Invoice to verify', k.code, i.invoice_no, i.invoice_date from invoices i join clients k on k.id = i.client_id cross join settings st where i.verified_on is null and i.face_cents >= st.verify_over_cents and invoice_open_cents(i.id) > 0 union all select 'Open dispute', k.code, i.invoice_no, i.disputed_on from invoices i join clients k on k.id = i.client_id where i.disputed_on is not null and i.dispute_resolved_on is null and invoice_open_cents(i.id) > 0 order by 4"
+      },
+      {
+        "title": "Reviews, audits and registrations",
+        "sql": "select code as client, cdd_review_due, next_audit_due, ppsr_reference, ppsr_expires_on from clients where status in ('active', 'watch') and (cdd_review_due < current_date + 60 or next_audit_due < current_date + 60 or ppsr_expires_on < current_date + 60 or ppsr_registered_on is null) order by code"
+      }
+    ]
+  },
+  {
+    "name": "portfolio",
+    "title": "Portfolio risk",
+    "subtitle": "Debtor exposure, concentration, dilution and ageing across the book",
+    "sections": [
+      {
+        "title": "Exposure by debtor across every client",
+        "sql": "select debtor_name as debtor, status, clients, open_cents, credit_limit_cents, overdue_cents from v_exposure where open_cents > 0 order by open_cents desc"
+      },
+      {
+        "title": "Debtors over the concentration limit",
+        "sql": "select client_code as client, debtor_name as debtor, eligible_cents, share_pct, limit_pct, excess_cents from v_concentration where excess_cents > 0 order by excess_cents desc"
+      },
+      {
+        "title": "Dilution, last 90 days",
+        "sql": "select code as client, invoiced_cents, credited_cents, round(100.0 * credited_cents / nullif(invoiced_cents, 0), 1) as dilution_pct from v_dilution where invoiced_cents > 0 order by 4 desc nulls last"
+      },
+      {
+        "title": "Ageing from invoice date",
+        "sql": "select client_code as client, d0_30_cents as days_0_30_cents, d31_60_cents as days_31_60_cents, d61_90_cents as days_61_90_cents, d90_plus_cents as days_90_plus_cents, total_cents from v_ageing order by client_code"
       }
     ]
   }

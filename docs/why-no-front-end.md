@@ -14,6 +14,7 @@ That layer used to be the whole product, because talking to a database was hard.
 ## What you give up
 
 - **A visual board.** Stages are a table you ask about, not cards you drag.
+- **A client portal.** Your clients cannot log in to upload schedules or see what they can draw. Enterprise DNA builds that on the same database when you want it.
 - **A phone app.** It runs where Claude Code runs.
 - **A vendor help desk.** This is open source. Enterprise DNA supports the installed version for businesses that want someone to call.
 

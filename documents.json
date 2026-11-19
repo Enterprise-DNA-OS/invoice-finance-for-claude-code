@@ -1,11 +1,37 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "client-statement",
+    "title": "Client statement",
+    "for_each": "select id, code as name from clients where status in ('active', 'watch') order by code",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      { "title": "Facility", "layout": "record", "sql": "select s.lender_name as lender, c.name as client, c.code as client_code, current_date as statement_date, c.facility_type, c.facility_limit_cents, c.advance_pct as advance_percent, c.discount_pct as discount_percent_per_30_days, c.service_fee_pct as service_fee_percent from clients c cross join settings s where c.id = $1" },
+      { "title": "Your position today", "layout": "record", "sql": "select ledger_cents as invoices_assigned_and_open_cents, ineligible_cents as not_counted_cents, concentration_excess_cents as over_debtor_limit_cents, drawing_base_cents, funds_in_use_cents, available_cents as available_to_draw_cents from v_availability where client_id = $1" },
+      { "title": "Account entries in the last 45 days", "sql": "select entry_on, kind, coalesce(fee_kind, '') as fee, ref as reference, amount_cents from account_entries where client_id = $1 and entry_on > current_date - 45 order by entry_on, created_at" },
+      { "title": "Invoices that do not count, and why", "sql": "select invoice_no, debtor_name as debtor, invoice_date, open_cents, ineligible_reason as reason from v_eligibility where client_id = $1 and ineligible_reason is not null order by invoice_date" },
+      { "title": "Debtor payments to pass on", "sql": "select debtor_name as debtor, invoice_no, received_on as paid_to_you_on, amount_cents from v_misdirected where client_code = (select code from clients where id = $1)" }
+    ]
+  },
+  {
+    "name": "notice-of-assignment",
+    "title": "Notice of assignment",
+    "for_each": "select cd.id, k.code || '-' || d.name as name from client_debtors cd join clients k on k.id = cd.client_id join debtors d on d.id = cd.debtor_id where k.facility_type = 'disclosed' and k.status <> 'exited' order by 2",
+    "file": "name",
+    "sections": [
+      { "title": "To", "layout": "record", "sql": "select d.name as debtor, coalesce(d.contact_name, 'Accounts Payable') as attention, current_date as date, k.name as from_supplier, s.lender_name as assigned_to from client_debtors cd join debtors d on d.id = cd.debtor_id join clients k on k.id = cd.client_id cross join settings s where cd.id = $1" },
+      { "title": "Notice", "sql": "select 'The amounts payable, and to become payable, under every invoice ' || k.name || ' issues to you have been assigned to ' || s.lender_name || '. Please pay them to ' || s.lender_name || ', not to ' || k.name || ', until ' || s.lender_name || ' tells you in writing that this has ended.' as notice from client_debtors cd join clients k on k.id = cd.client_id cross join settings s where cd.id = $1" },
+      { "title": "Open invoices covered by this notice", "sql": "select b.invoice_no, b.invoice_date, b.due_date, b.open_cents from client_debtors cd join v_invoice_balance b on b.client_id = cd.client_id and b.debtor_id = cd.debtor_id where cd.id = $1 and b.open_cents > 0 and b.recoursed_on is null order by b.invoice_date" }
+    ]
+  },
+  {
+    "name": "debtor-statement",
+    "title": "Statement of assigned invoices",
+    "for_each": "select cd.id, k.code || '-' || d.name as name from client_debtors cd join clients k on k.id = cd.client_id join debtors d on d.id = cd.debtor_id where k.facility_type = 'disclosed' and k.status <> 'exited' and cd.noa_sent_on is not null and exists (select 1 from v_invoice_balance b where b.client_id = cd.client_id and b.debtor_id = cd.debtor_id and b.open_cents > 0 and b.days_past_due > 0) order by 2",
+    "file": "name",
+    "sections": [
+      { "title": "Statement", "layout": "record", "sql": "select d.name as debtor, k.name as supplier, s.lender_name as pay_to, current_date as statement_date, cd.noa_sent_on as notice_of_assignment_sent from client_debtors cd join debtors d on d.id = cd.debtor_id join clients k on k.id = cd.client_id cross join settings s where cd.id = $1" },
+      { "title": "Open invoices", "sql": "select b.invoice_no, b.invoice_date, b.due_date, b.days_past_due, b.open_cents from client_debtors cd join v_invoice_balance b on b.client_id = cd.client_id and b.debtor_id = cd.debtor_id where cd.id = $1 and b.open_cents > 0 and b.recoursed_on is null order by b.invoice_date" },
+      { "title": "Total", "layout": "record", "sql": "select sum(b.open_cents)::bigint as total_open_cents, sum(case when b.days_past_due > 0 then b.open_cents else 0 end)::bigint as overdue_cents from client_debtors cd join v_invoice_balance b on b.client_id = cd.client_id and b.debtor_id = cd.debtor_id where cd.id = $1 and b.open_cents > 0 and b.recoursed_on is null" }
     ]
   }
 ]
