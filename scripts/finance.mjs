@@ -199,7 +199,8 @@ async function cmdClient(db, { args, flags }) {
     where cd.client_id = $1 group by d.name, cd.noa_sent_on, cd.noa_acknowledged_on order by 4 desc`, [c.id]);
   const audits = await db.query('select done_on, findings, actor from field_audits where client_id = $1 order by done_on desc', [c.id]);
   const notes = await db.query('select created_at, body, actor from notes where client_id = $1 order by created_at desc limit 10', [c.id]);
-  const data = { client: c, position, ineligible, concentration, debtors, audits, notes };
+  const held = await db.query('select debtor_name, invoice_no, received_on, amount_cents, days_held from v_misdirected where client_code = $1 order by received_on', [c.code]);
+  const data = { client: c, position, ineligible, concentration, held, debtors, audits, notes };
   out(flags, data, (d) => {
     heading(`${c.code}  ${c.name}`);
     console.log(`  ${c.status}, ${c.facility_type} facility, limit ${$(c.facility_limit_cents)}, advance ${c.advance_pct}%, discount ${c.discount_pct}% per 30 days, service ${c.service_fee_pct}%`);
@@ -207,6 +208,7 @@ async function cmdClient(db, { args, flags }) {
     console.log(`\n  Ledger ${$(d.position.ledger_cents)}  less ineligible ${$(d.position.ineligible_cents)}  less concentration ${$(d.position.concentration_excess_cents)}  = eligible ${$(d.position.eligible_cents)}`);
     console.log(`  Drawing base ${$(d.position.drawing_base_cents)}  less funds in use ${$(d.position.funds_in_use_cents)}  = ${num(d.position.available_cents) < 0 ? `OVER-ADVANCED by ${$(-num(d.position.available_cents))}` : `can draw ${$(d.position.available_cents)}`}`);
     if (d.ineligible.length) { console.log('\n  Ineligible'); table(d.ineligible, [['reason', 'Reason'], ['invoices', 'Invoices'], ['open_cents', 'Open', $]]); }
+    if (d.held.length) { console.log('\n  Debtor payments held by the client (not yet passed on)'); table(d.held, [['debtor_name', 'Debtor'], ['invoice_no', 'Invoice'], ['received_on', 'Paid to client'], ['amount_cents', 'Amount', $], ['days_held', 'Days']]); }
     if (d.concentration.length) { console.log('\n  Debtor concentration'); table(d.concentration, [['debtor_name', 'Debtor'], ['eligible_cents', 'Eligible', $], ['share_pct', 'Share', pct], ['limit_pct', 'Limit', pct], ['excess_cents', 'Excess', $]]); }
     if (d.debtors.length) { console.log('\n  Debtors and notices of assignment'); table(d.debtors, [['name', 'Debtor'], ['open_cents', 'Open', $], ['noa_sent_on', 'Notice sent'], ['noa_acknowledged_on', 'Acknowledged']]); }
     if (d.notes.length) { console.log('\n  Notes'); for (const n of d.notes) console.log(`  ${isoDate(n.created_at)}  ${n.actor}: ${n.body}`); }
